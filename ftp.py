@@ -5,9 +5,9 @@ import sys
 from threading import Thread
 
 
-class FTP:
+class Server:
 
-	TAG = "FTP"
+	TAG = "NO TAG"
 	
 	host = None
 	port = None
@@ -17,13 +17,14 @@ class FTP:
 
 	clients = {}
 
-	def __init__(self, host, port):
+	def __init__(self, tag, host, port):
 		self.sock = None
 		self.host = host
 		self.port = port
+		self.TAG = tag
 
 	#starts the FTP server
-	def start(self):
+	def start(self, clientFunction):
 		if self.sock is None:
 			
 			#socket initialization
@@ -48,7 +49,7 @@ class FTP:
 
 
 					#starting the client thread
-					clientThread = Thread(target=self.runClient, args=(clientSocket,ip))
+					clientThread = Thread(target=clientFunction, args=(self, clientSocket, ip))
 					clientThread.start()
 
 					#saving the client's socket
@@ -67,48 +68,12 @@ class FTP:
 		self.running = False
 
 		for ip,client in self.clients.items():
-			self.debug("["+ ip + "] Disconnecting")
 			try:
 				client['socket'].shutdown(socket.SHUT_RDWR)
+				self.debug("["+ ip + "] Disconnecting")
 			except:
 				pass
 			client['thread'].join()
-
-	#Method called per connected client
-	def runClient(self, clientSocket, ip):
-
-		self.debug("["+ ip + "] Client Connected")
-
-		#Pure-FTPd banner
-		clientSocket.send(b'220---------- Welcome to Pure-FTPd [privsep] [TLS] ----------\r\n')
-		clientSocket.send(b'220-You are user number 1 of 2 allowed.\r\n')
-		now = bytes(datetime.datetime.now().strftime('%H:%M'),'utf-8')
-		clientSocket.send(b'220-Local time is now '+ now + b'. Server port: ' + bytes(str(self.port), 'utf-8') + b'.\r\n')
-		clientSocket.send(b'220-This is a private system - No anonymous login\r\n')
-		clientSocket.send(b'220 You will be disconnected after 15 minutes of inactivity.\r\n')
-		
-		#Allows basic FTP commands
-		while True:
-			time.sleep(0.1)
-			
-			try: 
-				cmd = clientSocket.recv(1024)
-				cmd_str = str(cmd, "utf-8") #dangerous in case a byte can't be a character
-				
-				if cmd == b'\r\n':
-					None
-				elif cmd_str.lower().startswith("user ") and len(cmd_str) > 5:
-					clientSocket.send(b"331 User "+ bytes(cmd_str[5:], "utf-8") + b" OK. Password required\r\n")
-				elif cmd_str.lower().startswith("pass ") and len(cmd_str) > 5:
-					time.sleep( round((time.time() % 4) + 1) )
-					clientSocket.send(b"530 Login authentication failed\r\n")
-				else:
-					clientSocket.send(b'530 You aren\'t logged in\r\n')
-			except:
-				break
-
-		clientSocket.close()
-		self.debug("["+ ip + "] Client disconnected")
 
 	#Debug output
 	def debug(self, msg):
@@ -124,10 +89,46 @@ class FTP:
 
 
 
+#Method called per connected client
+def ftpClient(server, clientSocket, ip):
+
+	server.debug("["+ ip + "] Client Connected")
+
+	#Pure-FTPd banner
+	clientSocket.send(b'220---------- Welcome to Pure-FTPd [privsep] [TLS] ----------\r\n')
+	clientSocket.send(b'220-You are user number 1 of 2 allowed.\r\n')
+	now = bytes(datetime.datetime.now().strftime('%H:%M'),'utf-8')
+	clientSocket.send(b'220-Local time is now '+ now + b'. Server port: ' + bytes(str(server.port), 'utf-8') + b'.\r\n')
+	clientSocket.send(b'220-This is a private system - No anonymous login\r\n')
+	clientSocket.send(b'220 You will be disconnected after 15 minutes of inactivity.\r\n')
+	
+	#Allows basic FTP commands
+	while True:
+		time.sleep(0.1)
+		
+		try: 
+			cmd = clientSocket.recv(1024)
+			cmd_str = str(cmd, "utf-8") #dangerous in case a byte can't be a character
+			
+			if cmd == b'\r\n':
+				None
+			elif cmd_str.lower().startswith("user ") and len(cmd_str) > 5:
+				clientSocket.send(b"331 User "+ bytes(cmd_str[5:], "utf-8") + b" OK. Password required\r\n")
+			elif cmd_str.lower().startswith("pass ") and len(cmd_str) > 5:
+				time.sleep( round((time.time() % 4) + 1) )
+				clientSocket.send(b"530 Login authentication failed\r\n")
+			else:
+				clientSocket.send(b'530 You aren\'t logged in\r\n')
+		except:
+			break
+
+	clientSocket.close()
+	server.debug("["+ ip + "] Client disconnected")
 
 
-ftp = FTP("127.0.0.1", 1921)
-ftpThread = Thread(target=ftp.start)
+
+ftp = Server("FTP", "127.0.0.1", 1921)
+ftpThread = Thread(target=ftp.start, args=(ftpClient,))
 ftpThread.start()
 
 quit = False
