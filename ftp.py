@@ -8,33 +8,57 @@ from threading import Thread
 class FTP:
 
 	TAG = "FTP"
+	
+	host = None
+	port = None
+
 	sock = None
 	running = False
 	clientThreads = []
 
-	def __init__(self):
+	def __init__(self, host, port):
 		self.sock = None
+		self.host = host
+		self.port = port
 
 	#starts the FTP server
 	def start(self):
 		if self.sock is None:
+			
+			#socket initialization
 			self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-			self.sock.bind(("127.0.0.1", 1921))
+			self.sock.bind((self.host, self.port))
+			self.sock.settimeout(5)
 			self.sock.listen(3)
+
 			self.running = True
 			self.debug("Started")
+
+			#main thread loop, waiting for clients to connect
 			while self.sock is not None:
+				
+				if self.running == 0:
+					break
+
 				time.sleep(0.1)
-				(clientSocket, address) = self.sock.accept()
-				clientThread = Thread(target=self.runClient, args=(clientSocket,))
-				clientThread.start()
-				self.clientThreads.append(clientThread)
+
+				try:
+					(clientSocket, address) = self.sock.accept()
+					clientThread = Thread(target=self.runClient, args=(clientSocket,))
+					clientThread.start()
+					self.clientThreads.append(clientThread)
+				except:
+					pass
 
 	#Stops the server
 	def stop(self):
 		self.running = False
+
+		#joining each thread
 		for clientThread in self.clientThreads:
 			clientThread.join()
+		
+		#closing the listening socket
 		self.sock.close()
 		self.debug("Stopped")
 
@@ -72,11 +96,12 @@ class FTP:
 	def debug(self, msg):
 		print((self.TAG + ": " + msg))
 
-				
-ftp = FTP()
+
+
+ftp = FTP("127.0.0.1", 1921)
 ftpThread = Thread(target=ftp.start)
 ftpThread.start()
 
 time.sleep(20)
 ftp.stop()
-ftpThread.join(2)
+ftpThread.join()
